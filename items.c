@@ -42,6 +42,10 @@ typedef struct {
     rel_time_t evicted_time;
 } itemstats_t;
 
+// 一个 slabclass 对应一个 lur 队列
+// heads: 头部 node
+// tails: 尾部 node
+// sizes: 队列大小
 static item *heads[LARGEST_ID];
 static item *tails[LARGEST_ID];
 static itemstats_t itemstats[LARGEST_ID];
