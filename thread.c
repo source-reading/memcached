@@ -301,6 +301,7 @@ static void setup_thread(LIBEVENT_THREAD *me) {
         exit(1);
     }
 
+    // 创建一个事件, 监听 notify_receive_fd 读事件
     /* Listen for notifications from other threads */
     event_set(&me->notify_event, me->notify_receive_fd,
               EV_READ | EV_PERSIST, thread_libevent_process, me);
@@ -371,6 +372,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
 
     switch (buf[0]) {
     case 'c':
+        // 队列里面获取一个 connection
         item = cq_pop(me->new_conn_queue);
 
         if (NULL != item) {
@@ -421,10 +423,12 @@ static void thread_libevent_process(int fd, short which, void *arg) {
 /* Which thread we assigned a connection to most recently. */
 static int last_thread = -1;
 
+
 /*
  * Dispatches a new connection to another thread. This is only ever called
  * from the main thread, either during initialization (for UDP) or because
  * of an incoming connection.
+ 主要是 main thread 监听到一个 accept 的连接，然后将连接放入子线程的队列，听通知子线程去处理
  */
 void dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport) {
@@ -716,6 +720,7 @@ void memcached_thread_init(int nthreads) {
         exit(1);
     }
 
+    // hash key 使用到的分段锁锁
     item_lock_count = hashsize(power);
     item_lock_hashpower = power;
 
@@ -741,6 +746,8 @@ void memcached_thread_init(int nthreads) {
             exit(1);
         }
 
+        // main thread 收到 accept 事件后, 会随机选择一个 子 thread
+        // 然后将 connection 放入它的队列, 并通知它队列有新的 connection
         threads[i].notify_receive_fd = fds[0];
         threads[i].notify_send_fd = fds[1];
 

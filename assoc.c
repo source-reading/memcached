@@ -51,15 +51,16 @@ static item** old_hashtable = 0;
 static unsigned int hash_items = 0;
 
 /* Flag: Are we in the middle of expanding now? */
-static bool expanding = false;
+static bool expanding = false; // hash 是否处理扩容状态
 static bool started_expanding = false;
 
 /*
  * During expansion we migrate values with bucket granularity; this is how
  * far we've gotten so far. Ranges from 0 .. hashsize(hashpower - 1) - 1.
  */
-static unsigned int expand_bucket = 0;
+static unsigned int expand_bucket = 0; // 标记 hash 扩容的 pos
 
+// hash 初始化
 void assoc_init(const int hashtable_init) {
     if (hashtable_init) {
         hashpower = hashtable_init;
@@ -82,6 +83,7 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
     if (expanding &&
         (oldbucket = (hv & hashmask(hashpower - 1))) >= expand_bucket)
     {
+        // hash 正在扩容, key 的hash值大于expand_bucket, 表示数据目前还在 old hash 里面
         it = old_hashtable[oldbucket];
     } else {
         it = primary_hashtable[hv & hashmask(hashpower)];
@@ -123,6 +125,7 @@ static item** _hashitem_before (const char *key, const size_t nkey, const uint32
 }
 
 /* grows the hashtable to the next power of 2. */
+// hash 扩容, 数据是按照桶为单位一步步copy
 static void assoc_expand(void) {
     old_hashtable = primary_hashtable;
 
@@ -276,6 +279,7 @@ static void *assoc_maintenance_thread(void *arg) {
 
 static pthread_t maintenance_tid;
 
+// 创建一个线程处理 hash 扩容时候的数据拷贝
 int start_assoc_maintenance_thread() {
     int ret;
     char *env = getenv("MEMCACHED_HASH_BULK_MOVE");

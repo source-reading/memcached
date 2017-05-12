@@ -94,6 +94,7 @@ unsigned int slabs_clsid(const size_t size) {
 /**
  * Determines the chunk sizes and initializes the slab class descriptors
  * accordingly.
+ slab 初始化
  */
 void slabs_init(const size_t limit, const double factor, const bool prealloc, const uint32_t *slab_sizes) {
     int i = POWER_SMALLEST - 1;
@@ -102,6 +103,7 @@ void slabs_init(const size_t limit, const double factor, const bool prealloc, co
     mem_limit = limit;
 
     if (prealloc) {
+        // 预先将需要的最大内存获取到
         /* Allocate everything in a big chunk with malloc */
         mem_base = malloc(mem_limit);
         if (mem_base != NULL) {
@@ -115,6 +117,10 @@ void slabs_init(const size_t limit, const double factor, const bool prealloc, co
 
     memset(slabclass, 0, sizeof(slabclass));
 
+    /*
+    初始化 slabclass , item 大小按照 factor 扩大
+    只是初始化数据结构, item 内存暂时没有分配
+    */
     while (++i < MAX_NUMBER_OF_SLAB_CLASSES-1) {
         if (slab_sizes != NULL) {
             if (slab_sizes[i-1] == 0)
@@ -137,6 +143,7 @@ void slabs_init(const size_t limit, const double factor, const bool prealloc, co
         }
     }
 
+    // 最后一个slabclass 是最大的 item
     power_largest = i;
     slabclass[power_largest].size = settings.slab_chunk_size_max;
     slabclass[power_largest].perslab = settings.slab_page_size / settings.slab_chunk_size_max;
@@ -185,6 +192,7 @@ static void slabs_preallocate (const unsigned int maxslabs) {
 static int grow_slab_list (const unsigned int id) {
     slabclass_t *p = &slabclass[id];
     if (p->slabs == p->list_size) {
+        // 新增一个 slab
         size_t new_size =  (p->list_size != 0) ? p->list_size * 2 : 16;
         void *new_list = realloc(p->slab_list, new_size * sizeof(void *));
         if (new_list == 0) return 0;
@@ -246,6 +254,7 @@ static int do_slabs_newslab(const unsigned int id) {
     return 1;
 }
 
+// 从 slab 获取一个 item
 /*@null@*/
 static void *do_slabs_alloc(const size_t size, unsigned int id, uint64_t *total_bytes,
         unsigned int flags) {

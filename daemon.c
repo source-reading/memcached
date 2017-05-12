@@ -45,12 +45,14 @@ int daemonize(int nochdir, int noclose)
 {
     int fd;
 
+    // 创建子进程
     switch (fork()) {
     case -1:
         return (-1);
     case 0:
         break;
     default:
+        // 父进程直接退出
         _exit(EXIT_SUCCESS);
     }
 

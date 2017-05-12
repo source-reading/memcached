@@ -118,7 +118,7 @@ struct slab_rebalance slab_rebal;
 volatile int slab_rebalance_signal;
 
 /** file scope variables **/
-static conn *listen_conn = NULL;
+static conn *listen_conn = NULL; // tcp, udp, sock file 创建的连接
 static int max_fds;
 static struct event_base *main_base;
 
@@ -138,6 +138,7 @@ static enum transmit_result transmit(conn *c);
  */
 static volatile bool allow_new_conns = true;
 static struct event maxconnsevent;
+// 一个用于控制是否可以处理新连接的定时器
 static void maxconns_handler(const int fd, const short which, void *arg) {
     struct timeval t = {.tv_sec = 0, .tv_usec = 10000};
 
@@ -308,6 +309,7 @@ static pthread_t conn_timeout_tid;
 
 #define CONNS_PER_SLICE 100
 #define TIMEOUT_MSG_SIZE (1 + sizeof(int))
+// 一个用于检测连接是否超时的线程
 static void *conn_timeout_thread(void *arg) {
     int i;
     conn *c;
@@ -467,6 +469,15 @@ void conn_worker_readd(conn *c) {
     }
 }
 
+/*
+实例化一个 connection, 并设置相应监听的事件，并将事件加入到 event_base
+sfd: socket
+init_state: 当前 sfd 状态
+event_flags: 需要监听的事件
+read_buffer_size: read buffer 大小
+transport: 协议, 当前是 tcp4 tcp6
+base: event dispatch loop
+*/
 conn *conn_new(const int sfd, enum conn_states init_state,
                 const int event_flags,
                 const int read_buffer_size, enum network_transport transport,
@@ -474,6 +485,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
     conn *c;
 
     assert(sfd >= 0 && sfd < max_fds);
+    // 从预先分配的连接池获取
     c = conns[sfd];
 
     if (NULL == c) {
@@ -523,6 +535,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
         STATS_UNLOCK();
 
         c->sfd = sfd;
+        // 创建的 connection 放入连接池
         conns[sfd] = c;
     }
 
@@ -589,6 +602,7 @@ conn *conn_new(const int sfd, enum conn_states init_state,
 
     c->noreply = false;
 
+    // 对客户端连接 fd 进行监听
     event_set(&c->event, sfd, event_flags, event_handler, (void *)c);
     event_base_set(base, &c->event);
     c->ev_flags = event_flags;
@@ -4504,6 +4518,7 @@ static bool update_event(conn *c, const int new_flags) {
 
 /*
  * Sets whether we are listening for new connections or not.
+ 连接数过多时候，控制是否可以处理新连接
  */
 void do_accept_new_conns(const bool do_accept) {
     conn *next;
@@ -4696,6 +4711,9 @@ static int read_into_chunked_item(conn *c) {
     return total;
 }
 
+/*
+处理客户端的读写
+*/
 static void drive_machine(conn *c) {
     bool stop = false;
     int sfd;
@@ -5166,7 +5184,7 @@ static int server_socket(const char *interface,
 
     for (next= ai; next; next= next->ai_next) {
         conn *listen_conn_add;
-        if ((sfd = new_socket(next)) == -1) {
+        if ((sfd = new_sxocket(next)) == -1) {
             /* getaddrinfo can return "junk" addresses,
              * we make sure at least one works before erroring.
              */
@@ -6517,6 +6535,7 @@ int main (int argc, char **argv) {
         init_sasl();
     }
 
+    // 后台运行
     /* daemonize if requested */
     /* if we want to ensure our ability to dump core, don't chdir to / */
     if (do_daemonize) {
@@ -6529,6 +6548,7 @@ int main (int argc, char **argv) {
         }
     }
 
+    // 锁定内存页, 以免 swap 交换，影响性能
     /* lock paged memory if needed */
     if (lock_memory) {
 #ifdef HAVE_MLOCKALL
@@ -6542,6 +6562,7 @@ int main (int argc, char **argv) {
 #endif
     }
 
+    // main 线程的 事件分发器
     /* initialize main thread libevent instance */
     main_base = event_init();
 
@@ -6549,7 +6570,9 @@ int main (int argc, char **argv) {
     logger_init();
     stats_init();
     assoc_init(settings.hashpower_init);
+    // 预先分配好固定大小 connection 数组 (大小: 最大连接数 + 内部使用的)
     conn_init();
+    // 初始化 slab, 
     slabs_init(settings.maxbytes, settings.factor, preallocate,
             use_slab_sizes ? slab_sizes : NULL);
 
@@ -6561,9 +6584,12 @@ int main (int argc, char **argv) {
         perror("failed to ignore SIGPIPE; sigaction");
         exit(EX_OSERR);
     }
+
+    // 初始化子线程
     /* start up worker threads if MT mode */
     memcached_thread_init(settings.num_threads);
 
+    // 创建一个线程, 用于 hash 表处理扩容的时候，将 桶 从 old copy to new hash
     if (start_assoc_maintenance_thread() == -1) {
         exit(EXIT_FAILURE);
     }
